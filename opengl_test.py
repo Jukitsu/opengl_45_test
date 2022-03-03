@@ -1,6 +1,8 @@
 import pyglet
 import ctypes
 import glm
+from collections import deque
+import math
 
 pyglet.options["shadow_window"] = False
 pyglet.options["debug_gl"] = False
@@ -14,23 +16,6 @@ fps_display = pyglet.window.FPSDisplay(window)
 
 dim = [852, 480]
 
-vertex_positions = [
-	 0.5,  0.5,  0.5,  0.5, -0.5,  0.5,  0.5, -0.5, -0.5,  0.5,  0.5, -0.5,
-	-0.5,  0.5, -0.5, -0.5, -0.5, -0.5, -0.5, -0.5,  0.5, -0.5,  0.5,  0.5,
-	-0.5,  0.5,  0.5, -0.5,  0.5, -0.5,  0.5,  0.5, -0.5,  0.5,  0.5,  0.5,
-	-0.5, -0.5,  0.5, -0.5, -0.5, -0.5,  0.5, -0.5, -0.5,  0.5, -0.5,  0.5,
-	-0.5,  0.5,  0.5, -0.5, -0.5,  0.5,  0.5, -0.5,  0.5,  0.5,  0.5,  0.5,
-	 0.5,  0.5, -0.5,  0.5, -0.5, -0.5, -0.5, -0.5, -0.5, -0.5,  0.5, -0.5,
-]
-
-tex_coords = [
-	0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0,
-	0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0,
-	0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0,
-	0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0,
-	0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0,
-	0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0,
-]
 
 quad = [
     -1.0,  1.0,  0.0, 1.0,
@@ -42,14 +27,6 @@ quad = [
      1.0,  1.0,  1.0, 1.0
 ]
 
-shading = [
-	0.80, 0.80, 0.80, 0.80,
-	0.80, 0.80, 0.80, 0.80,
-	1.00, 1.00, 1.00, 1.00,
-	0.49, 0.49, 0.49, 0.49,
-	0.92, 0.92, 0.92, 0.92,
-	0.92, 0.92, 0.92, 0.92,
-]
 
 indices = [
 	 0,  1,  2,  0,  2,  3, # right
@@ -61,46 +38,50 @@ indices = [
 ]
 
 vertices = [
-     0.5,  0.5,  0.5,   0.0, 1.0, 0.0,
-     0.5, -0.5,  0.5,   0.0, 0.0, 0.0,
-     0.5, -0.5, -0.5,   1.0, 0.0, 0.0,
-     0.5,  0.5, -0.5,   1.0, 1.0, 0.0,
+     0.5,  0.5,  0.5,   0.0, 1.0, 0.0,    1.0,  0.0,  0.0,
+     0.5, -0.5,  0.5,   0.0, 0.0, 0.0,    1.0,  0.0,  0.0,
+     0.5, -0.5, -0.5,   1.0, 0.0, 0.0,    1.0,  0.0,  0.0,
+     0.5,  0.5, -0.5,   1.0, 1.0, 0.0,    1.0,  0.0,  0.0,
 
-    -0.5,  0.5, -0.5,   0.0, 1.0, 0.0,
-    -0.5, -0.5, -0.5,   0.0, 0.0, 0.0,
-    -0.5, -0.5,  0.5,   1.0, 0.0, 0.0,
-    -0.5,  0.5,  0.5,   1.0, 1.0, 0.0,
+    -0.5,  0.5, -0.5,   0.0, 1.0, 0.0,   -1.0,  0.0,  0.0,
+    -0.5, -0.5, -0.5,   0.0, 0.0, 0.0,   -1.0,  0.0,  0.0,
+    -0.5, -0.5,  0.5,   1.0, 0.0, 0.0,   -1.0,  0.0,  0.0,
+    -0.5,  0.5,  0.5,   1.0, 1.0, 0.0,   -1.0,  0.0,  0.0,
 
-    -0.5,  0.5,  0.5,   0.0, 1.0, 0.0,
-    -0.5,  0.5, -0.5,   0.0, 0.0, 0.0,
-     0.5,  0.5, -0.5,   1.0, 0.0, 0.0,
-     0.5,  0.5,  0.5,   1.0, 1.0, 0.0,
+     0.5,  0.5,  0.5,   0.0, 1.0, 0.0,    0.0,  1.0,  0.0,
+     0.5,  0.5, -0.5,   0.0, 0.0, 0.0,    0.0,  1.0,  0.0,
+    -0.5,  0.5, -0.5,   1.0, 0.0, 0.0,    0.0,  1.0,  0.0,
+    -0.5,  0.5,  0.5,   1.0, 1.0, 0.0,    0.0,  1.0,  0.0,
 
-    -0.5, -0.5,  0.5,   0.0, 1.0, 0.0,
-    -0.5, -0.5, -0.5,   0.0, 0.0, 0.0,
-     0.5, -0.5, -0.5,   1.0, 0.0, 0.0,
-     0.5, -0.5,  0.5,   1.0, 1.0, 0.0,
+    -0.5, -0.5,  0.5,   0.0, 1.0, 0.0,    0.0, -1.0,  0.0,
+    -0.5, -0.5, -0.5,   0.0, 0.0, 0.0,    0.0, -1.0,  0.0,
+     0.5, -0.5, -0.5,   1.0, 0.0, 0.0,    0.0, -1.0,  0.0,
+     0.5, -0.5,  0.5,   1.0, 1.0, 0.0,    0.0, -1.0,  0.0,
 
-    -0.5,  0.5,  0.5,   0.0, 1.0, 0.0,
-    -0.5, -0.5,  0.5,   0.0, 0.0, 0.0,
-     0.5, -0.5,  0.5,   1.0, 0.0, 0.0,
-     0.5,  0.5,  0.5,   1.0, 1.0, 0.0,
+    -0.5,  0.5,  0.5,   0.0, 1.0, 0.0,    0.0,  0.0,  1.0,
+    -0.5, -0.5,  0.5,   0.0, 0.0, 0.0,    0.0,  0.0,  1.0,
+     0.5, -0.5,  0.5,   1.0, 0.0, 0.0,    0.0,  0.0,  1.0, 
+     0.5,  0.5,  0.5,   1.0, 1.0, 0.0,    0.0,  0.0,  1.0,
 
-     0.5,  0.5, -0.5,   0.0, 1.0, 0.0,
-     0.5, -0.5, -0.5,   0.0, 0.0, 0.0,
-    -0.5, -0.5, -0.5,   1.0, 0.0, 0.0,
-    -0.5,  0.5, -0.5,   1.0, 1.0, 0.0
+     0.5,  0.5, -0.5,   0.0, 1.0, 0.0,    0.0,  0.0, -1.0,
+     0.5, -0.5, -0.5,   0.0, 0.0, 0.0,    0.0,  0.0, -1.0,
+    -0.5, -0.5, -0.5,   1.0, 0.0, 0.0,    0.0,  0.0, -1.0,
+    -0.5,  0.5, -0.5,   1.0, 1.0, 0.0,    0.0,  0.0, -1.0
 ]
 
 instanced_array = []
-for _x in range(-8, 8):
-    for _y in range(-8, 8):
-        for _z in range(-8, 8):
-            instanced_array.extend((_x * 2.0, _y * 2.0, _z * 2.0))
+for _x in range(-2, 3):
+    for _y in range(-2, 3):
+        for _z in range(-2, 3):
+            instanced_array.extend((_x * 4.0, _y * 4.0, _z * 4.0))
+
+light_pos = (-1.4, 3.5, 2.5)
+instanced_array.extend(light_pos)
 
 cmd = [
     # Index Count          Instance Count            Base Index   Base Vertex   Base Instance
-    len(indices),   len(instanced_array) // 3,            0,           0,              0,     
+    len(indices),   (len(instanced_array) - 3) // 3,       0,           0,              0, 
+    len(indices),                 1,                     0,           0,   (len(instanced_array) - 3) // 3
 ]
 
 vert = """
@@ -108,14 +89,29 @@ vert = """
 
 layout(location = 0) in vec3 a_VertexPosition;
 layout(location = 1) in vec3 a_VertexTexCoords;
-layout(location = 2) in vec3 a_InstanceOffset;
+layout(location = 2) in vec3 a_VertexNormal;
+layout(location = 3) in vec3 a_InstanceOffset;
 
-layout(location = 0) uniform mat4 u_ModelViewProj;
+layout(std140, binding = 0) uniform u_Camera {
+    mat4 u_ModelViewProj;
+    vec3 u_CameraPos;
+};
 
+out vec3 v_Position;
 out vec3 v_TexCoords;
+out flat vec3 v_Normal;
+out flat vec3 v_BaseColor; // for light blocks, using push constants
+
+const vec3 c_BaseColors[2] = vec3[2](
+    vec3(0.0f, 0.0f, 0.0f),
+    vec3(1.0f, 1.0f, 1.0f)
+);
 
 void main(void) {
+    v_Position = a_VertexPosition + a_InstanceOffset;
     v_TexCoords = a_VertexTexCoords;
+    v_Normal = a_VertexNormal;
+    v_BaseColor = c_BaseColors[gl_DrawID]; // Push constant
     gl_Position = u_ModelViewProj * vec4(a_VertexPosition + a_InstanceOffset, 1.0);
 }
 """
@@ -123,14 +119,34 @@ void main(void) {
 frag = """
 #version 460 core
 
+in vec3 v_Position;
 in vec3 v_TexCoords;
+in flat vec3 v_Normal;
+in flat vec3 v_BaseColor;
 
-layout(location = 1) uniform sampler2DArray u_TextureArraySampler;
+layout(location = 0) uniform sampler2DArray u_TextureArraySampler;
+layout(std140, binding = 0) uniform u_Camera {
+    mat4 u_ModelViewProj;
+    vec3 u_CameraPos;
+};
+layout(std140, binding = 1) uniform u_Lights {
+    vec3 u_LightPos;
+    float u_AmbientLight;
+    float u_SpecularStrength;
+};
 
 out vec4 fragColor;
 
 void main(void) {
-    fragColor = texture(u_TextureArraySampler, v_TexCoords);
+    vec3 normal = normalize(v_Normal);
+    vec3 lightRay = normalize(u_LightPos - v_Position);
+    float diffuseLight = max(dot(normal, lightRay), 0.0);
+
+    vec3 viewRay = normalize(u_CameraPos - v_Position);
+    vec3 reflectRay = reflect(-lightRay, normal);
+    float specularLight = u_SpecularStrength * pow(max(dot(viewRay, reflectRay), 0.0), 32);
+    
+    fragColor = vec4(v_BaseColor, 1.0f) + (diffuseLight + u_AmbientLight + specularLight) * texture(u_TextureArraySampler, v_TexCoords);
 }
 """
 
@@ -156,6 +172,7 @@ in vec2 v_Position;
 in vec2 v_TexCoords;
 
 layout(location = 0) uniform sampler2D u_ColorBufferSampler;
+
 
 out vec4 fragColor;
 
@@ -183,15 +200,80 @@ cbo = GLuint(0)
 dbo = GLuint(0)
 quad_vao = GLuint(0)
 quad_vbo = GLuint(0)
-ubo = GLuint(0)
+mat_ubo = GLuint(0)
+light_ubo = GLuint(0)
+mapped_ubo = [None, None]
+fences = deque()
 
+camera_position = glm.vec3(0, 0, 3)
+camera_rotation = [-math.tau / 4, 0.0]
+
+user_input = [0, 0, 0]
+mouse_captured = [True]
+
+def update_position(delta_time):
+    multiplier = 7 * delta_time
+
+    camera_position[1] += user_input[1] * multiplier
+
+    if user_input[0] or user_input[2]:
+        angle = camera_rotation[0] - math.atan2(user_input[2], user_input[0]) + math.tau / 4
+
+        camera_position[0] += math.cos(angle) * multiplier
+        camera_position[2] += math.sin(angle) * multiplier
+
+
+@window.event
+def on_mouse_motion(x, y, delta_x, delta_y):
+    if mouse_captured[0]:
+
+        camera_rotation[0] += delta_x * 0.004
+        camera_rotation[1] += delta_y * 0.004
+
+        camera_rotation[1] = max(-math.tau / 4, min(math.tau / 4, camera_rotation[1]))
+@window.event
+def on_mouse_drag(x, y, delta_x, delta_y, buttons, modifiers):
+		on_mouse_motion(x, y, delta_x, delta_y)
+	
+@window.event
+def on_key_press(key, modifiers):
+    if not mouse_captured[0]:
+        return
+
+    if   key == pyglet.window.key.D: user_input[0] += 1
+    elif key == pyglet.window.key.A: user_input[0] -= 1
+    elif key == pyglet.window.key.W: user_input[2] += 1
+    elif key == pyglet.window.key.S: user_input[2] -= 1
+
+    elif key == pyglet.window.key.SPACE : user_input[1] += 1
+    elif key == pyglet.window.key.LSHIFT: user_input[1] -= 1
+
+@window.event
+def on_key_release(key, modifiers):
+    if not mouse_captured[0]:
+        return
+
+    if   key == pyglet.window.key.D: user_input[0] -= 1
+    elif key == pyglet.window.key.A: user_input[0] += 1
+    elif key == pyglet.window.key.W: user_input[2] -= 1
+    elif key == pyglet.window.key.S: user_input[2] += 1
+
+    elif key == pyglet.window.key.SPACE : user_input[1] -= 1
+    elif key == pyglet.window.key.LSHIFT: user_input[1] += 1
+
+@window.event
+def on_mouse_press(x, y, button, modifiers):
+    mouse_captured[0] = not mouse_captured[0]
+    window.set_exclusive_mouse(mouse_captured[0])
+
+    return
 
 t = [0]
 
 def tick(delta_time):
     t[0] += delta_time
 
-pyglet.clock.schedule_interval(tick, 1 / 60)
+pyglet.clock.schedule(tick)
 
 def init_all():
 
@@ -206,7 +288,7 @@ def init_all():
         0
     )
 
-    glVertexArrayVertexBuffer(vao, 0, vbo, 0, 6 * ctypes.sizeof(GLfloat))
+    glVertexArrayVertexBuffer(vao, 0, vbo, 0, 9 * ctypes.sizeof(GLfloat))
 
     glEnableVertexArrayAttrib(vao, 0)
     glVertexArrayAttribBinding(vao, 0, 0)
@@ -215,6 +297,10 @@ def init_all():
     glEnableVertexArrayAttrib(vao, 1)
     glVertexArrayAttribBinding(vao, 1, 0)
     glVertexArrayAttribFormat(vao, 1, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(GLfloat))
+
+    glEnableVertexArrayAttrib(vao, 2)
+    glVertexArrayAttribBinding(vao, 2, 0)
+    glVertexArrayAttribFormat(vao, 2, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(GLfloat))
 
 
     glCreateBuffers(1, instance_vbo)
@@ -226,15 +312,19 @@ def init_all():
     )
 
     glVertexArrayVertexBuffer(vao, 1, instance_vbo, 0, 3 * sizeof(GLfloat))
-
-    glEnableVertexArrayAttrib(vao, 2)
     glVertexArrayBindingDivisor(vao, 1, 1)
-    glVertexArrayAttribFormat(vao, 2, 3, GL_FLOAT, GL_FALSE, 0)
-    glVertexArrayAttribBinding(vao, 2, 1)
+
+    glVertexArrayAttribBinding(vao, 3, 1)
+    glEnableVertexArrayAttrib(vao, 3)
+    glVertexArrayAttribFormat(vao, 3, 3, GL_FLOAT, GL_FALSE, 0)
 
 
     glCreateBuffers(1, ibo)
-    glNamedBufferStorage(ibo, ctypes.sizeof(GLuint) * len(indices), (GLuint * len(indices))(*indices), 0)
+    glNamedBufferStorage(ibo, 
+        ctypes.sizeof(GLuint) * len(indices), 
+        (GLuint * len(indices))(*indices),
+        0
+    )
 
     glVertexArrayElementBuffer(vao, ibo)
 
@@ -246,6 +336,36 @@ def init_all():
         (GLuint * len(cmd)) (*cmd),
         0
     )
+
+    glCreateBuffers(1, mat_ubo)
+    glNamedBufferStorage(
+        mat_ubo, 
+        19 * ctypes.sizeof(GLfloat),
+        None,
+        GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT 
+    )
+    mapped_ubo[0] = glMapNamedBufferRange(
+        mat_ubo, 
+        0, 
+        19 * ctypes.sizeof(GLfloat), 
+        GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_FLUSH_EXPLICIT_BIT
+    )
+    glBindBufferBase(GL_UNIFORM_BUFFER, 0, mat_ubo)
+    
+
+    light_data = [
+        *light_pos, # Light Pos
+        0.25, # Ambient
+        0.5, # Specular
+    ]
+    glCreateBuffers(1, light_ubo)
+    glNamedBufferStorage(
+        light_ubo,
+        len(light_data) * ctypes.sizeof(GLfloat),
+        (GLfloat * len(light_data))(*light_data),
+        0
+    )
+    glBindBufferBase(GL_UNIFORM_BUFFER, 1, light_ubo)
 
 
     glCreateTextures(GL_TEXTURE_2D_ARRAY, 1, tao)
@@ -264,12 +384,18 @@ def init_all():
     glGenerateTextureMipmap(tao)
     
     glBindTextureUnit(0, tao)
-    glProgramUniform1i(program, 1, 0)
+    glProgramUniform1i(pprcs_program, 0, 0)
+
+
 
     glCreateVertexArrays(1, quad_vao)
     
     glCreateBuffers(1, quad_vbo)
-    glNamedBufferStorage(quad_vbo, ctypes.sizeof(GLfloat) * len(quad), (GLfloat * len(quad))(*quad), 0)
+    glNamedBufferStorage(quad_vbo, 
+        ctypes.sizeof(GLfloat) * len(quad), 
+        (GLfloat * len(quad))(*quad), 
+        0
+    )
 
     glVertexArrayVertexBuffer(quad_vao, 0, quad_vbo, 0, 4 * sizeof(GLfloat))
 
@@ -315,27 +441,64 @@ def on_resize(width, height):
     glBindFramebuffer(GL_FRAMEBUFFER, 0)
     glViewport(0, 0, width, height)
 
-def update_matrices(x, y, z):
+def destroy_all():
+    glDeleteVertexArrays(1, vao)
+    glDeleteBuffers(1, vbo)
+    glDeleteBuffers(1, ibo)
+    glDeleteBuffers(1, instance_vbo)
+    glDeleteBuffers(1, icbo)
+    glDeleteTextures(1, tao)
+    glDeleteFramebuffers(1, fbo)
+    glDeleteTextures(1, cbo)
+    glDeleteRenderbuffers(1, dbo)
+    glDeleteVertexArrays(1, quad_vao)
+    glDeleteBuffers(1, quad_vbo)
+    glDeleteBuffers(1, mat_ubo)
+    
+
+def update(delta_time):
+    if not mouse_captured[0]:
+        user_input[0] = 0
+        user_input[1] = 0
+        user_input[2] = 0
+
+    update_position(delta_time)
+
+def update_matrices():
     p_matrix = glm.perspective(
                 glm.radians(90),
                 dim[0] / dim[1], 0.1, 500)
 
     v_matrix = glm.mat4(1.0)
-    v_matrix = glm.translate(v_matrix, glm.vec3(-x, -y, -z))
-    v_matrix = glm.rotate(v_matrix, glm.sin(t[0] / 3 * 2), -glm.vec3(1.0, 0.0, 0.0))
-    v_matrix = glm.rotate(v_matrix, t[0], -glm.vec3(0.0, 1.0, 0.0))
+    v_matrix = glm.rotate(v_matrix, camera_rotation[1], -glm.vec3(1.0, 0.0, 0.0))
+    v_matrix = glm.rotate(v_matrix, -camera_rotation[0] - math.tau / 4, -glm.vec3(0.0, 1.0, 0.0))
+    v_matrix = glm.translate(v_matrix, -camera_position)
+    
 
     vp_matrix = p_matrix * v_matrix
-    glProgramUniformMatrix4fv(program, 0, 1, GL_FALSE, glm.value_ptr(vp_matrix))
+
+    ctypes.memmove(mapped_ubo[0], glm.value_ptr(vp_matrix), 16 * ctypes.sizeof(GLfloat))
+    ctypes.memmove(mapped_ubo[0] + 16 * ctypes.sizeof(GLfloat), glm.value_ptr(camera_position), 3 * ctypes.sizeof(GLfloat))
+    glFlushMappedNamedBufferRange(mat_ubo, 0, 19 * ctypes.sizeof(GLfloat))
+
+
+pyglet.clock.schedule(update)
+window.set_exclusive_mouse(True)
 
 @window.event
 def on_draw():
-    update_matrices(0, 0, 6)
+    update_matrices()
 
+    while len(fences) > 3:
+        fence = fences.popleft()
+        glClientWaitSync(fence, GL_SYNC_FLUSH_COMMANDS_BIT, 2147483647)
+        glDeleteSync(fence)
+        
     glBindFramebuffer(GL_FRAMEBUFFER, fbo)
-    glClearColor(1.0, 1.0, 1.0, 1.0)
+    glClearColor(0.0, 0.0, 0.0, 0.0)
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
     glEnable(GL_DEPTH_TEST)
+    glEnable(GL_CULL_FACE)
     glUseProgram(program)
     glBindVertexArray(vao)
     glBindBuffer(GL_DRAW_INDIRECT_BUFFER, icbo)
@@ -355,6 +518,8 @@ def on_draw():
     glBindVertexArray(0)
 
     fps_display.draw()
+
+    fences.append(glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0))
 
 def main():
     init_all()
