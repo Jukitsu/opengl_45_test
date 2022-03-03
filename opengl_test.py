@@ -3,6 +3,7 @@ import ctypes
 import glm
 from collections import deque
 import math
+from random import randint
 
 pyglet.options["shadow_window"] = False
 pyglet.options["debug_gl"] = False
@@ -70,18 +71,20 @@ vertices = [
 ]
 
 instanced_array = []
-for _x in range(-2, 3):
-    for _y in range(-2, 3):
-        for _z in range(-2, 3):
-            instanced_array.extend((_x * 4.0, _y * 4.0, _z * 4.0))
+for i in range(-128, 128):
+    for k in range(-128, 128):
+        instanced_array.extend((i, randint(-10, 10) / 10, k))
+
+for _ in range(256):
+    instanced_array.extend(((512 - randint(0, 1024)) / 8, (512 - randint(0, 1024)) / 8, (512 - randint(0, 1024)) / 8))
 
 light_pos = (-1.4, 3.5, 2.5)
 instanced_array.extend(light_pos)
 
 cmd = [
     # Index Count          Instance Count            Base Index   Base Vertex   Base Instance
-    len(indices),   (len(instanced_array) - 3) // 3,       0,           0,              0, 
-    len(indices),                 1,                     0,           0,   (len(instanced_array) - 3) // 3
+    len(indices),   len(instanced_array) // 3 - 1,       0,           0,              0, 
+    len(indices),                 1,                     0,           0,   len(instanced_array) // 3 - 1
 ]
 
 vert = """
@@ -138,15 +141,16 @@ layout(std140, binding = 1) uniform u_Lights {
 out vec4 fragColor;
 
 void main(void) {
+    float ambientLight = u_AmbientLight;
     vec3 normal = normalize(v_Normal);
     vec3 lightRay = normalize(u_LightPos - v_Position);
-    float diffuseLight = max(dot(normal, lightRay), 0.0);
+    float diffuseLight = max(dot(normal, lightRay), 0.0f);
 
     vec3 viewRay = normalize(u_CameraPos - v_Position);
     vec3 reflectRay = reflect(-lightRay, normal);
-    float specularLight = u_SpecularStrength * pow(max(dot(viewRay, reflectRay), 0.0), 32);
+    float specularLight = u_SpecularStrength * pow(max(dot(viewRay, reflectRay), 0.0f), 32);
     
-    fragColor = vec4(v_BaseColor, 1.0f) + (diffuseLight + u_AmbientLight + specularLight) * texture(u_TextureArraySampler, v_TexCoords);
+    fragColor = vec4(v_BaseColor, 1.0f) + (diffuseLight + ambientLight + specularLight) * texture(u_TextureArraySampler, v_TexCoords);
 }
 """
 
@@ -374,7 +378,7 @@ def init_all():
     glTextureStorage3D(
         tao, 4, GL_RGBA8, 16, 16, 256
     )
-    cobblestone_image = pyglet.image.load(f"textures/cobblestone.png").get_image_data()
+    cobblestone_image = pyglet.image.load(f"textures/stone.png").get_image_data()
     data = cobblestone_image.get_data("RGBA", cobblestone_image.width * 4)
     glTextureSubImage3D(
         tao, 0, 0, 0, 0,
@@ -412,8 +416,8 @@ def create_fbo():
 
     glCreateTextures(GL_TEXTURE_2D, 1, cbo)
     glTextureStorage2D(cbo, 1, GL_RGBA8, dim[0], dim[1])
-    glTextureParameteri(cbo, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
-    glTextureParameteri(cbo, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
+    glTextureParameteri(cbo, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
+    glTextureParameteri(cbo, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
 
     glNamedFramebufferTexture(fbo, GL_COLOR_ATTACHMENT0, cbo, 0)
 
@@ -440,22 +444,7 @@ def on_resize(width, height):
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0)
     glViewport(0, 0, width, height)
-
-def destroy_all():
-    glDeleteVertexArrays(1, vao)
-    glDeleteBuffers(1, vbo)
-    glDeleteBuffers(1, ibo)
-    glDeleteBuffers(1, instance_vbo)
-    glDeleteBuffers(1, icbo)
-    glDeleteTextures(1, tao)
-    glDeleteFramebuffers(1, fbo)
-    glDeleteTextures(1, cbo)
-    glDeleteRenderbuffers(1, dbo)
-    glDeleteVertexArrays(1, quad_vao)
-    glDeleteBuffers(1, quad_vbo)
-    glDeleteBuffers(1, mat_ubo)
     
-
 def update(delta_time):
     if not mouse_captured[0]:
         user_input[0] = 0
@@ -495,7 +484,7 @@ def on_draw():
         glDeleteSync(fence)
         
     glBindFramebuffer(GL_FRAMEBUFFER, fbo)
-    glClearColor(0.0, 0.0, 0.0, 0.0)
+    glClearColor(0.25, 0.25, 0.25, 0.25)
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
     glEnable(GL_DEPTH_TEST)
     glEnable(GL_CULL_FACE)
@@ -507,7 +496,7 @@ def on_draw():
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0)
     glDisable(GL_DEPTH_TEST)
-    glClearColor(1.0, 1.0, 1.0, 1.0)
+    glClearColor(0.0, 0.0, 0.0, 0.0)
     glClear(GL_COLOR_BUFFER_BIT)
     glUseProgram(pprcs_program)
     glBindVertexArray(quad_vao)
