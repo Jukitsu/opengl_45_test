@@ -73,18 +73,18 @@ vertices = [
 instanced_array = []
 for i in range(-128, 128):
     for k in range(-128, 128):
-        instanced_array.extend((i, randint(-10, 10) / 10, k))
+        instanced_array.extend((i, randint(-10, 10) / 10, k, 0))
 
-for _ in range(256):
-    instanced_array.extend(((512 - randint(0, 1024)) / 8, (512 - randint(0, 1024)) / 8, (512 - randint(0, 1024)) / 8))
+for _ in range(512):
+    instanced_array.extend(((512 - randint(0, 1024)) / 8, randint(0, 256) / 8, (512 - randint(0, 1024)) / 8, 1))
 
-light_pos = (-1.4, 3.5, 2.5)
-instanced_array.extend(light_pos)
+light_instance = (-1.4, 3.5, 2.5, 2)
+instanced_array.extend(light_instance)
 
 cmd = [
     # Index Count          Instance Count            Base Index   Base Vertex   Base Instance
-    len(indices),   len(instanced_array) // 3 - 1,       0,           0,              0, 
-    len(indices),                 1,                     0,           0,   len(instanced_array) // 3 - 1
+    len(indices),   len(instanced_array) // 4 - 1,       0,           0,              0, 
+    len(indices),                 1,                     0,           0,   len(instanced_array) // 4 - 1
 ]
 
 vert = """
@@ -94,6 +94,7 @@ layout(location = 0) in vec3 a_VertexPosition;
 layout(location = 1) in vec3 a_VertexTexCoords;
 layout(location = 2) in vec3 a_VertexNormal;
 layout(location = 3) in vec3 a_InstanceOffset;
+layout(location = 4) in float a_InstanceTexIndex;
 
 layout(std140, binding = 0) uniform u_Camera {
     mat4 u_ModelViewProj;
@@ -103,18 +104,13 @@ layout(std140, binding = 0) uniform u_Camera {
 out vec3 v_Position;
 out vec3 v_TexCoords;
 out flat vec3 v_Normal;
-out flat vec3 v_BaseColor; // for light blocks, using push constants
-
-const vec3 c_BaseColors[2] = vec3[2](
-    vec3(0.0f, 0.0f, 0.0f),
-    vec3(1.0f, 1.0f, 1.0f)
-);
+out flat int v_Emmissive; // for light blocks, using push constants
 
 void main(void) {
     v_Position = a_VertexPosition + a_InstanceOffset;
-    v_TexCoords = a_VertexTexCoords;
+    v_TexCoords = vec3(a_VertexTexCoords.xy, a_VertexTexCoords.z + a_InstanceTexIndex);
     v_Normal = a_VertexNormal;
-    v_BaseColor = c_BaseColors[gl_DrawID]; // Push constant
+    v_Emmissive = gl_DrawID; // Push constant
     gl_Position = u_ModelViewProj * vec4(a_VertexPosition + a_InstanceOffset, 1.0);
 }
 """
@@ -125,7 +121,7 @@ frag = """
 in vec3 v_Position;
 in vec3 v_TexCoords;
 in flat vec3 v_Normal;
-in flat vec3 v_BaseColor;
+in flat int v_Emmissive;
 
 layout(location = 0) uniform sampler2DArray u_TextureArraySampler;
 layout(std140, binding = 0) uniform u_Camera {
@@ -149,8 +145,12 @@ void main(void) {
     vec3 viewRay = normalize(u_CameraPos - v_Position);
     vec3 reflectRay = reflect(-lightRay, normal);
     float specularLight = u_SpecularStrength * pow(max(dot(viewRay, reflectRay), 0.0f), 32);
-    
-    fragColor = vec4(v_BaseColor, 1.0f) + (diffuseLight + ambientLight + specularLight) * texture(u_TextureArraySampler, v_TexCoords);
+
+    if (v_Emmissive != 0) {
+        fragColor = vec4(1.0f);
+    } else {
+        fragColor = (diffuseLight + ambientLight + specularLight) * texture(u_TextureArraySampler, v_TexCoords);
+    }
 }
 """
 
@@ -199,9 +199,12 @@ instance_vbo = GLuint(0)
 ibo = GLuint(0)
 icbo = GLuint(0)
 tao = GLuint(0)
-fbo = GLuint(0)
-cbo = GLuint(0)
-dbo = GLuint(0)
+msaa_fbo = GLuint(0)
+msaa_cbo = GLuint(0)
+msaa_dbo = GLuint(0)
+pp_fbo = GLuint(0)
+pp_cbo = GLuint(0)
+pp_dbo = GLuint(0)
 quad_vao = GLuint(0)
 quad_vbo = GLuint(0)
 mat_ubo = GLuint(0)
@@ -315,12 +318,16 @@ def init_all():
         0
     )
 
-    glVertexArrayVertexBuffer(vao, 1, instance_vbo, 0, 3 * sizeof(GLfloat))
+    glVertexArrayVertexBuffer(vao, 1, instance_vbo, 0, 4 * sizeof(GLfloat))
     glVertexArrayBindingDivisor(vao, 1, 1)
 
     glVertexArrayAttribBinding(vao, 3, 1)
     glEnableVertexArrayAttrib(vao, 3)
     glVertexArrayAttribFormat(vao, 3, 3, GL_FLOAT, GL_FALSE, 0)
+
+    glVertexArrayAttribBinding(vao, 4, 1)
+    glEnableVertexArrayAttrib(vao, 4)
+    glVertexArrayAttribFormat(vao, 4, 1, GL_FLOAT, GL_FALSE, 3 * sizeof(GLfloat))
 
 
     glCreateBuffers(1, ibo)
@@ -358,7 +365,7 @@ def init_all():
     
 
     light_data = [
-        *light_pos, # Light Pos
+        light_instance[0], light_instance[1], light_instance[2], # Light Pos
         0.25, # Ambient
         0.5, # Specular
     ]
@@ -378,11 +385,25 @@ def init_all():
     glTextureStorage3D(
         tao, 4, GL_RGBA8, 16, 16, 256
     )
-    cobblestone_image = pyglet.image.load(f"textures/stone.png").get_image_data()
-    data = cobblestone_image.get_data("RGBA", cobblestone_image.width * 4)
+    stone_image = pyglet.image.load(f"textures/stone.png").get_image_data()
+    data = stone_image.get_data("RGBA", stone_image.width * 4)
     glTextureSubImage3D(
         tao, 0, 0, 0, 0,
+        stone_image.width, stone_image.height, 1, 
+        GL_RGBA, GL_UNSIGNED_BYTE, data
+    )
+    cobblestone_image = pyglet.image.load(f"textures/cobblestone.png").get_image_data()
+    data = cobblestone_image.get_data("RGBA", cobblestone_image.width * 4)
+    glTextureSubImage3D(
+        tao, 0, 0, 0, 1,
         cobblestone_image.width, cobblestone_image.height, 1, 
+        GL_RGBA, GL_UNSIGNED_BYTE, data
+    )
+    light_image = pyglet.image.load(f"textures/light_block.png").get_image_data()
+    data = light_image.get_data("RGBA", light_image.width * 4)
+    glTextureSubImage3D(
+        tao, 0, 0, 0, 2,
+        light_image.width, light_image.height, 1, 
         GL_RGBA, GL_UNSIGNED_BYTE, data
     )
     glGenerateTextureMipmap(tao)
@@ -390,7 +411,7 @@ def init_all():
     glBindTextureUnit(0, tao)
     glProgramUniform1i(pprcs_program, 0, 0)
 
-
+    
 
     glCreateVertexArrays(1, quad_vao)
     
@@ -412,30 +433,47 @@ def init_all():
     glVertexArrayAttribFormat(quad_vao, 1, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(GLfloat))
 
 def create_fbo():
-    glCreateFramebuffers(1, fbo)
+    glCreateFramebuffers(1, msaa_fbo)
 
-    glCreateTextures(GL_TEXTURE_2D, 1, cbo)
-    glTextureStorage2D(cbo, 1, GL_RGBA8, dim[0], dim[1])
-    glTextureParameteri(cbo, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
-    glTextureParameteri(cbo, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
+    glCreateTextures(GL_TEXTURE_2D_MULTISAMPLE, 1, msaa_cbo)
+    glTextureStorage2DMultisample(msaa_cbo, 4, GL_RGBA8, dim[0], dim[1], GL_TRUE)
 
-    glNamedFramebufferTexture(fbo, GL_COLOR_ATTACHMENT0, cbo, 0)
+    glNamedFramebufferTexture(msaa_fbo, GL_COLOR_ATTACHMENT0, msaa_cbo, 0)
 
-    glCreateRenderbuffers(1, dbo)
-    glNamedRenderbufferStorage(dbo, GL_DEPTH_COMPONENT16, dim[0], dim[1])
+    glCreateRenderbuffers(1, msaa_dbo)
+    glNamedRenderbufferStorageMultisample(msaa_dbo, 4, GL_DEPTH_COMPONENT16, dim[0], dim[1])
 
-    glNamedFramebufferRenderbuffer(fbo, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, dbo)
+    glNamedFramebufferRenderbuffer(msaa_fbo, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, msaa_dbo)
 
-    assert glCheckNamedFramebufferStatus(fbo, GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE
+    assert glCheckNamedFramebufferStatus(msaa_fbo, GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE
+    
+    glCreateFramebuffers(1, pp_fbo)
 
-    glBindTextureUnit(1, cbo)
+    glCreateTextures(GL_TEXTURE_2D, 1, pp_cbo)
+    glTextureStorage2D(pp_cbo, 1, GL_RGBA8, dim[0], dim[1])
+    glTextureParameteri(pp_cbo, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
+    glTextureParameteri(pp_cbo, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
+
+    glNamedFramebufferTexture(pp_fbo, GL_COLOR_ATTACHMENT0, pp_cbo, 0)
+
+    glCreateRenderbuffers(1, pp_dbo)
+    glNamedRenderbufferStorage(pp_dbo, GL_DEPTH_COMPONENT16, dim[0], dim[1])
+
+    glNamedFramebufferRenderbuffer(pp_fbo, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, pp_dbo)
+
+    assert glCheckNamedFramebufferStatus(pp_fbo, GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE
+
+    glBindTextureUnit(1, pp_cbo)
     glProgramUniform1i(pprcs_program, 0, 1)
 
 @window.event
 def on_resize(width, height):
-    glDeleteFramebuffers(1, fbo)
-    glDeleteTextures(1, cbo)
-    glDeleteRenderbuffers(1, dbo)
+    glDeleteFramebuffers(1, msaa_fbo)
+    glDeleteTextures(1, msaa_cbo)
+    glDeleteRenderbuffers(1, msaa_dbo)
+    glDeleteFramebuffers(1, pp_fbo)
+    glDeleteTextures(1, pp_cbo)
+    glDeleteRenderbuffers(1, pp_dbo)
 
     dim[0] = width
     dim[1] = height
@@ -483,7 +521,7 @@ def on_draw():
         glClientWaitSync(fence, GL_SYNC_FLUSH_COMMANDS_BIT, 2147483647)
         glDeleteSync(fence)
         
-    glBindFramebuffer(GL_FRAMEBUFFER, fbo)
+    glBindFramebuffer(GL_FRAMEBUFFER, msaa_fbo)
     glClearColor(0.25, 0.25, 0.25, 0.25)
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
     glEnable(GL_DEPTH_TEST)
@@ -493,6 +531,11 @@ def on_draw():
     glBindBuffer(GL_DRAW_INDIRECT_BUFFER, icbo)
     
     glMultiDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, None, len(cmd) // 5, 0)
+
+
+    glBlitNamedFramebuffer(
+        msaa_fbo, pp_fbo, 0, 0, dim[0], dim[1], 0, 0, dim[0], dim[1], GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT, GL_NEAREST
+    )
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0)
     glDisable(GL_DEPTH_TEST)
