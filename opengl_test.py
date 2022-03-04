@@ -238,9 +238,10 @@ def on_mouse_motion(x, y, delta_x, delta_y):
         camera_rotation[1] += delta_y * 0.004
 
         camera_rotation[1] = max(-math.tau / 4, min(math.tau / 4, camera_rotation[1]))
+
 @window.event
 def on_mouse_drag(x, y, delta_x, delta_y, buttons, modifiers):
-		on_mouse_motion(x, y, delta_x, delta_y)
+	on_mouse_motion(x, y, delta_x, delta_y)
 	
 @window.event
 def on_key_press(key, modifiers):
@@ -409,7 +410,7 @@ def init_all():
     glGenerateTextureMipmap(tao)
     
     glBindTextureUnit(0, tao)
-    glProgramUniform1i(pprcs_program, 0, 0)
+    glProgramUniform1i(program, 0, 0)
 
     
 
